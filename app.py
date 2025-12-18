@@ -1,53 +1,37 @@
 import streamlit as st
 import numpy as np
-from PIL import Image, ImageFilter
-from skimage import feature, color
+from PIL import Image
+import tensorflow as tf
 
-st.set_page_config(page_title="AI Image Forensics", layout="centered")
-st.title("🕵️ AI Image Forensics – Real vs AI Generated")
+st.set_page_config(page_title="AI vs Real Image Detector", layout="centered")
+st.title("🧠 AI vs Real Image Detection")
 
-uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+# Load your pre-trained model (must be placed in same folder)
+@st.cache_resource
+def load_model():
+    return tf.keras.models.load_model("ai_vs_real_model.h5")
 
-def analyze_image(img_pil):
-    # Convert to grayscale
-    gray = img_pil.convert("L")
-    gray_np = np.array(gray, dtype=np.float32) / 255.0
+model = load_model()
 
-    # Edge detection
-    edges = feature.canny(gray_np, sigma=2, low_threshold=0.05, high_threshold=0.15)
-    edge_density = np.mean(edges)
-
-    # Laplacian noise approximation using PIL
-    laplacian = np.array(gray.filter(ImageFilter.FIND_EDGES), dtype=float)
-    noise_score = laplacian.var()
-
-    # Heuristic scoring
-    ai_score = 0
-    if edge_density < 0.02:
-        ai_score += 1
-    if noise_score < 0.002:  # small threshold, normalized
-        ai_score += 1
-
-    confidence = min(95, 50 + ai_score * 25)
-
-    if ai_score >= 2:
-        return "AI Generated", confidence, edges
-    else:
-        return "Real Image", confidence, edges
+uploaded_file = st.file_uploader("Upload an image (jpg/png)", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
+    st.image(image, caption="Uploaded Image", use_column_width=True)
 
-    label, confidence, edges = analyze_image(image)
+    # Preprocess for model
+    img_resized = image.resize((224, 224))
+    img_array = np.array(img_resized) / 255.0
+    img_batch = np.expand_dims(img_array, axis=0)
 
-    st.subheader("Uploaded Image")
-    st.image(image, use_column_width=True)
+    # Model inference
+    pred = model.predict(img_batch)[0][0]
+    # Adjust threshold if model outputs probabilities
+    label = "AI‑Generated" if pred > 0.5 else "Real"
+    confidence = float(pred if pred > 0.5 else 1 - pred) * 100
 
-    st.subheader("Forensic Edge Map")
-    st.image((edges * 255).astype("uint8"), use_column_width=True)
-
-    st.subheader("Prediction")
-    if label == "AI Generated":
-        st.error(f"⚠️ {label} ({confidence}% confidence)")
+    # Show results
+    if label == "AI‑Generated":
+        st.error(f"🚨 {label} ({confidence:.2f}% confidence)")
     else:
-        st.success(f"✅ {label} ({confidence}% confidence)")
+        st.success(f"✅ {label} ({confidence:.2f}% confidence)")

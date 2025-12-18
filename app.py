@@ -5,8 +5,8 @@ from PIL import Image, ImageChops
 import io
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Forensics Lab Pro", layout="wide")
-st.title("🕵️ AI Image Forensics Lab (v2.0)")
+st.set_page_config(page_title="Advanced Forensics", layout="wide")
+st.title("🕵️ AI Image Forensics Lab (v3.0)")
 
 def get_ela(image_pil, quality=90):
     """Calculates ELA and returns a safe uint8 NumPy array."""
@@ -19,70 +19,61 @@ def get_ela(image_pil, quality=90):
     max_diff = max([ex[1] if isinstance(ex, tuple) else ex for ex in extrema])
     if max_diff == 0: max_diff = 1
     scale = 255.0 / max_diff
-    enhanced_diff = diff.point(lambda p: p * scale).convert("L")
-    return np.array(enhanced_diff).astype(np.uint8)
+    return np.array(diff.point(lambda p: p * scale).convert("L")).astype(np.uint8)
 
-def scan_metadata(input_bytes):
-    """Scans the raw binary of the image for AI software signatures."""
-    # Common strings found in AI-generated or AI-edited image headers
-    ai_signatures = [
-        b"DALL-E", b"Midjourney", b"Adobe Firefly", b"Stable Diffusion", 
-        b"kandinsky", b"creativelive", b"deepai", b"craiyon"
-    ]
-    found_tags = []
-    # Convert to lowercase for broader matching
-    lower_bytes = input_bytes.lower()
-    for sig in ai_signatures:
-        if sig.lower() in lower_bytes:
-            found_tags.append(sig.decode())
-    return found_tags
+def scan_binary_signatures(input_bytes):
+    """Scans for hidden software tags in the file's binary header."""
+    signatures = [b"DALL-E", b"Midjourney", b"Adobe Firefly", b"Stable Diffusion", b"kandinsky"]
+    found = [sig.decode() for sig in signatures if sig.lower() in input_bytes.lower()]
+    return found
 
 # --- UPLOADER ---
 uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
-    # Read raw bytes for metadata scan
     input_bytes = uploaded_file.read()
     raw_img = Image.open(io.BytesIO(input_bytes)).convert("RGB")
     
-    # 1. Pixel Analysis (ELA)
+    # 1. Pixel Check (ELA)
     ela_map = get_ela(raw_img)
     ela_score = np.mean(ela_map) 
 
-    # 2. Header Analysis (Metadata)
-    found_ai_metadata = scan_metadata(input_bytes)
+    # 2. Binary Metadata Check
+    ai_tags = scan_binary_signatures(input_bytes)
 
-    # --- UI ---
+    # --- UI RENDERING ---
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Original Image")
         st.image(np.array(raw_img), use_column_width=True)
     with col2:
         st.subheader("ELA Forensic Map")
-        st.image(ela_map, use_column_width=True, clamp=True)
+        st.image(ela_map, use_column_width=True)
 
     st.divider()
 
-    # --- FINAL VERDICT LOGIC ---
+    # --- THE VERDICT LOGIC ---
     st.header("🔍 Forensic Verdict")
     
-    # If metadata is found, it's 100% AI regardless of ELA score
-    if len(found_ai_metadata) > 0:
+    # AI detection criteria:
+    # - ELA Score > 10 (Statistical anomaly)
+    # - Metadata contains AI tags (Absolute confirmation)
+    
+    if ai_tags:
         st.error(f"### Verdict: AI-GENERATED (Confirmed via Metadata)")
-        st.info(f"**Digital Signature Found:** {', '.join(found_ai_metadata)}")
-        st.warning("Reasoning: The file header contains specific software tags used by AI image generators.")
-    
-    # Fallback to ELA if no metadata is found
-    elif ela_score > 12.0:
-        st.error(f"### Verdict: AI-GENERATED / MODIFIED (Statistical Analysis)")
+        st.write(f"**Found Signature:** {', '.join(ai_tags)}")
+        st.info("Reasoning: The file's internal binary header contains tags from known AI generators.")
+    elif ela_score > 10.0:
+        st.error(f"### Verdict: AI-GENERATED / MODIFIED (High Probability)")
         st.write(f"Forensic Score: {ela_score:.2f}")
-        st.warning("Reasoning: High inconsistency in pixel compression levels detected.")
-    
+        st.warning("Reasoning: Pixel-level inconsistencies detected in the compression layer.")
     else:
         st.success(f"### Verdict: LIKELY REAL PHOTOGRAPH")
         st.write(f"Forensic Score: {ela_score:.2f}")
-        st.info("Reasoning: No AI metadata signatures found and pixel noise appears consistent.")
+        st.info("Reasoning: No digital AI signatures found; compression noise is consistent with physical sensors.")
 
-    st.sidebar.write(f"**Internal Log:**")
-    st.sidebar.write(f"ELA Score: {ela_score:.2f}")
-    st.sidebar.write(f"Metadata Hits: {len(found_ai_metadata)}")
+st.sidebar.markdown("""
+### 👨‍🏫 Mentor Tips:
+If ELA is failing (low score), it means the AI image is high-quality. 
+**Next Step:** Use the **Metadata Check** to find hidden 'DALL-E' strings.
+""")

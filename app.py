@@ -1,94 +1,61 @@
 import streamlit as st
-import requests
+import numpy as np
+import cv2
 from PIL import Image
-import io
+import tensorflow as tf
+from skimage import io, color, feature
 
-# -------------------------------
-# CONFIG
-# -------------------------------
-BACKEND_URL = "http://127.0.0.1:5000/upload"
+# --------------------------
+# Load your ML model
+# --------------------------
+@st.cache_resource
+def load_model():
+    model = tf.keras.models.load_model("your_model_path_here")  # replace with your actual model
+    return model
 
-st.set_page_config(
-    page_title="AI Image Forensics Platform",
-    page_icon="🕵️‍♂️",
-    layout="centered"
-)
+model = load_model()
 
-# -------------------------------
-# STYLES (Beach / Sea Aesthetic 🌊)
-# -------------------------------
-st.markdown("""
-<style>
-body {
-    background: linear-gradient(180deg, #a1c4fd, #c2e9fb);
-}
-.block-container {
-    padding-top: 2rem;
-}
-.result-box {
-    background-color: rgba(255,255,255,0.85);
-    padding: 20px;
-    border-radius: 15px;
-    margin-top: 20px;
-}
-</style>
-""", unsafe_allow_html=True)
+# --------------------------
+# Helper functions
+# --------------------------
+def preprocess_image(image: Image.Image):
+    # Convert to array
+    img_array = np.array(image)
+    # Resize to model input size (change as per your model)
+    img_array = cv2.resize(img_array, (224, 224))
+    img_array = img_array / 255.0
+    img_array = np.expand_dims(img_array, axis=0)
+    return img_array
 
-# -------------------------------
-# TITLE
-# -------------------------------
-st.title("🕵️ AI Image Forensics & Prompt Intelligence")
-st.subheader("AI vs Real Image Detection")
-st.write("Upload **any image** to check whether it is AI-generated or a real photograph.")
+def analyze_image(image: Image.Image):
+    # Example: run ML prediction
+    processed = preprocess_image(image)
+    prediction = model.predict(processed)
+    
+    # Example: simple feature extraction
+    gray = color.rgb2gray(np.array(image))
+    edges = feature.canny(gray)
+    
+    return prediction, edges
 
-# -------------------------------
-# IMAGE UPLOAD
-# -------------------------------
-uploaded_file = st.file_uploader(
-    "📤 Upload an image",
-    type=["jpg", "jpeg", "png", "webp"]
-)
+# --------------------------
+# Streamlit frontend
+# --------------------------
+st.title("AI Image Forensics Platform")
+
+uploaded_file = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
 
 if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Uploaded Image", use_column_width=True)
-
-    if st.button("🔍 Analyze Image"):
-        with st.spinner("Analyzing image... please wait"):
-            files = {
-                "image": (
-                    uploaded_file.name,
-                    uploaded_file.getvalue(),
-                    uploaded_file.type
-                )
-            }
-
-            try:
-                response = requests.post(BACKEND_URL, files=files)
-                data = response.json()
-
-                analysis = data.get("analysis", {})
-
-                label = analysis.get("label", "Unknown")
-                confidence = analysis.get("confidence", 0)
-                trust = analysis.get("trust_score", 0)
-
-                st.markdown('<div class="result-box">', unsafe_allow_html=True)
-
-                # -------------------------------
-                # UNCERTAINTY LOGIC
-                # -------------------------------
-                if confidence < 60:
-                    st.warning("⚠️ Model is unsure about this prediction.")
-
-                st.markdown(f"### 🧠 Prediction: **{label}**")
-                st.markdown(f"**Confidence:** {confidence}%")
-                st.markdown(f"**Opposite Trust Score:** {trust}%")
-
-                st.progress(int(confidence))
-
-                st.markdown('</div>', unsafe_allow_html=True)
-
-            except Exception as e:
-                st.error("❌ Failed to connect to backend.")
-                st.code(str(e))
+    
+    if st.button("Analyze"):
+        with st.spinner("Analyzing..."):
+            pred, edges = analyze_image(image)
+            st.success("Analysis complete!")
+            
+            st.subheader("ML Prediction Output")
+            st.write(pred)
+            
+            st.subheader("Edge Detection Preview")
+            st.image(edges, caption="Canny Edges", use_column_width=True)

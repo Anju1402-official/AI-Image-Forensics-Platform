@@ -5,8 +5,8 @@ from PIL import Image, ImageChops
 import io
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="AI Forensics Lab", layout="wide")
-st.title("🕵️ AI Image Forensics Lab (Pro)")
+st.set_page_config(page_title="Forensics Lab Pro", layout="wide")
+st.title("🕵️ AI Image Forensics Lab (v2.0)")
 
 def get_ela(image_pil, quality=90):
     """Calculates ELA and returns a safe uint8 NumPy array."""
@@ -23,18 +23,25 @@ def get_ela(image_pil, quality=90):
     return np.array(enhanced_diff).astype(np.uint8)
 
 def scan_metadata(input_bytes):
-    """Scans raw bytes for AI generator signatures."""
-    signatures = [b"DALL-E", b"Midjourney", b"Adobe Firefly", b"Stable Diffusion", b"Software: AI"]
-    found = []
-    for sig in signatures:
-        if sig in input_bytes:
-            found.append(sig.decode())
-    return found
+    """Scans the raw binary of the image for AI software signatures."""
+    # Common strings found in AI-generated or AI-edited image headers
+    ai_signatures = [
+        b"DALL-E", b"Midjourney", b"Adobe Firefly", b"Stable Diffusion", 
+        b"kandinsky", b"creativelive", b"deepai", b"craiyon"
+    ]
+    found_tags = []
+    # Convert to lowercase for broader matching
+    lower_bytes = input_bytes.lower()
+    for sig in ai_signatures:
+        if sig.lower() in lower_bytes:
+            found_tags.append(sig.decode())
+    return found_tags
 
 # --- UPLOADER ---
 uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
+    # Read raw bytes for metadata scan
     input_bytes = uploaded_file.read()
     raw_img = Image.open(io.BytesIO(input_bytes)).convert("RGB")
     
@@ -43,9 +50,9 @@ if uploaded_file:
     ela_score = np.mean(ela_map) 
 
     # 2. Header Analysis (Metadata)
-    ai_tags = scan_metadata(input_bytes)
+    found_ai_metadata = scan_metadata(input_bytes)
 
-    # --- UI LAYOUT ---
+    # --- UI ---
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Original Image")
@@ -56,25 +63,26 @@ if uploaded_file:
 
     st.divider()
 
-    # --- MULTI-FACTOR VERDICT ---
+    # --- FINAL VERDICT LOGIC ---
     st.header("🔍 Forensic Verdict")
     
-    # Logic: AI if Tags found OR ELA score is very high
-    is_ai = len(ai_tags) > 0 or ela_score > 12.0
+    # If metadata is found, it's 100% AI regardless of ELA score
+    if len(found_ai_metadata) > 0:
+        st.error(f"### Verdict: AI-GENERATED (Confirmed via Metadata)")
+        st.info(f"**Digital Signature Found:** {', '.join(found_ai_metadata)}")
+        st.warning("Reasoning: The file header contains specific software tags used by AI image generators.")
     
-    if is_ai:
-        st.error("### Verdict: AI-GENERATED / MODIFIED")
-        if ai_tags:
-            st.info(f"**Digital Fingerprint Found:** {', '.join(ai_tags)}")
-        st.write(f"**Forensic Score:** {ela_score:.2f}")
-        st.warning("Reasoning: High-frequency inconsistencies or specific AI software signatures were detected in the file data.")
+    # Fallback to ELA if no metadata is found
+    elif ela_score > 12.0:
+        st.error(f"### Verdict: AI-GENERATED / MODIFIED (Statistical Analysis)")
+        st.write(f"Forensic Score: {ela_score:.2f}")
+        st.warning("Reasoning: High inconsistency in pixel compression levels detected.")
+    
     else:
-        st.success("### Verdict: LIKELY REAL PHOTOGRAPH")
-        st.write(f"**Forensic Score:** {ela_score:.2f}")
-        st.info("Reasoning: No known AI metadata found and compression noise appears natural.")
+        st.success(f"### Verdict: LIKELY REAL PHOTOGRAPH")
+        st.write(f"Forensic Score: {ela_score:.2f}")
+        st.info("Reasoning: No AI metadata signatures found and pixel noise appears consistent.")
 
-    st.sidebar.markdown(f"""
-    **Stats for Report:**
-    - Mean ELA: {ela_score:.2f}
-    - AI Tags Found: {len(ai_tags)}
-    """)
+    st.sidebar.write(f"**Internal Log:**")
+    st.sidebar.write(f"ELA Score: {ela_score:.2f}")
+    st.sidebar.write(f"Metadata Hits: {len(found_ai_metadata)}")

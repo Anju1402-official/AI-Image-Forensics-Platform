@@ -1,56 +1,25 @@
 import streamlit as st
+from skimage import io, color, feature
 import numpy as np
-from PIL import Image
-import tensorflow as tf
-from skimage import color, feature
 
-st.set_page_config(page_title="AI Image Forensics", layout="centered")
+st.title("AI Image Forensics - Edge Detection")
 
-# ------------------ MODEL ------------------
-@st.cache_resource
-def load_model():
-    return tf.keras.models.load_model("model.h5")  # adjust if needed
+# Upload image
+uploaded_file = st.file_uploader("Choose an image (jpg, png)", type=["jpg", "jpeg", "png"])
 
-try:
-    model = load_model()
-    MODEL_OK = True
-except:
-    MODEL_OK = False
+if uploaded_file is not None:
+    # Read image
+    image = io.imread(uploaded_file)
 
-# ------------------ FUNCTIONS ------------------
-def preprocess(img):
-    img = img.resize((224, 224))
-    arr = np.array(img) / 255.0
-    return np.expand_dims(arr, axis=0)
+    # Convert to grayscale
+    gray = color.rgb2gray(image)
 
-def analyze(img):
-    result = None
-    if MODEL_OK:
-        result = model.predict(preprocess(img))
+    # Canny edge detection
+    edges = feature.canny(gray, sigma=2, low_threshold=0.05, high_threshold=0.15)
 
-    gray = color.rgb2gray(np.array(img))
-    edges = feature.canny(gray)
-
-    return result, edges
-
-# ------------------ UI ------------------
-st.title("🕵️ AI Image Forensics Platform")
-
-file = st.file_uploader("Upload Image", ["jpg", "png", "jpeg"])
-
-if file:
-    image = Image.open(file).convert("RGB")
+    # Display original and edges side by side
+    st.subheader("Original Image")
     st.image(image, use_column_width=True)
 
-    if st.button("Analyze Image"):
-        with st.spinner("Analyzing..."):
-            pred, edges = analyze(image)
-
-        st.success("Done")
-
-        if pred is not None:
-            st.subheader("Model Prediction")
-            st.write(pred)
-
-        st.subheader("Edge Detection")
-        st.image(edges, clamp=True)
+    st.subheader("Detected Edges")
+    st.image((edges * 255).astype("uint8"), use_column_width=True)

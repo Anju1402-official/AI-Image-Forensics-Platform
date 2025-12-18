@@ -5,8 +5,8 @@ from PIL import Image, ImageChops
 import io
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="AI Forensics Lab", layout="wide")
-st.title("🕵️ AI Image Forensics Lab (Advanced)")
+st.set_page_config(page_title="AI Forensics Pro", layout="wide")
+st.title("🕵️ AI Image Forensics Lab (v4.0)")
 
 def get_ela(image_pil, quality=90):
     original = image_pil.convert("RGB")
@@ -20,18 +20,11 @@ def get_ela(image_pil, quality=90):
     scale = 255.0 / max_diff
     return np.array(diff.point(lambda p: p * scale).convert("L")).astype(np.uint8)
 
-def get_fft_spectrum(img_cv):
-    """Detects repeating grid patterns common in AI generation."""
-    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-    dft = np.fft.fft2(gray)
-    dft_shift = np.fft.fftshift(dft)
-    magnitude_spectrum = 20 * np.log(np.abs(dft_shift) + 1)
-    return np.uint8(np.clip(magnitude_spectrum, 0, 255))
-
-def scan_binary(input_bytes):
-    """Scans raw file data for AI software signatures."""
-    sigs = [b"DALL-E", b"Midjourney", b"Adobe Firefly", b"Stable Diffusion"]
-    return [s.decode() for s in sigs if s.lower() in input_bytes.lower()]
+def scan_for_ai_strings(input_bytes):
+    """Scans binary data for hidden AI creator tags."""
+    ai_sigs = [b"DALL-E", b"Midjourney", b"Adobe Firefly", b"Stable Diffusion", b"Prompt", b"AI Generated"]
+    found = [s.decode() for s in ai_sigs if s.lower() in input_bytes.lower()]
+    return found
 
 # --- UPLOADER ---
 uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
@@ -39,45 +32,36 @@ uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
 if uploaded_file:
     input_bytes = uploaded_file.read()
     raw_img = Image.open(io.BytesIO(input_bytes)).convert("RGB")
-    file_bytes = np.frombuffer(input_bytes, np.uint8)
-    img_cv = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+    
+    # 1. Pixel Check
+    ela_score = np.mean(get_ela(raw_img)) 
 
-    # 1. Pixel Check (ELA)
-    ela_map = get_ela(raw_img)
-    ela_score = np.mean(ela_map) 
+    # 2. Binary Metadata Check (This is the most accurate for your panda/logo images)
+    ai_tags = scan_for_ai_strings(input_bytes)
 
-    # 2. Frequency Check (FFT)
-    fft_map = get_fft_spectrum(img_cv)
-    fft_score = np.std(fft_map) # AI images often have higher variance in frequencies
-
-    # 3. Binary Check
-    ai_tags = scan_binary(input_bytes)
-
-    # --- UI ---
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Original")
-        st.image(np.array(raw_img), use_column_width=True)
-    with col2:
-        st.subheader("FFT Frequency Spectrum")
-        st.image(fft_map, use_column_width=True)
-        st.caption("AI images often show unnatural dots or lines in this spectrum.")
-
+    # --- UI DISPLAY ---
+    st.image(np.array(raw_img), width=400, caption="Uploaded Image")
     st.divider()
 
-    # --- ENHANCED VERDICT LOGIC ---
+    # --- THE VERDICT LOGIC ---
     st.header("🔍 Forensic Verdict")
     
-    # We combine ELA, FFT variance, and Metadata for a final decision
+    # Rule 1: Metadata is king. If we find an AI tag, it's AI regardless of the score.
     if ai_tags:
-        st.error(f"### Verdict: AI-GENERATED (Confirmed by Metadata: {', '.join(ai_tags)})")
-    elif fft_score > 35.0: # Threshold for unnatural frequency distribution
-        st.error(f"### Verdict: AI-GENERATED (Detected via FFT Analysis)")
-        st.write(f"Frequency Variance: {fft_score:.2f}")
+        st.error(f"### Verdict: AI-GENERATED (Confirmed via Metadata)")
+        st.info(f"**Found Signature:** {', '.join(ai_tags)}")
+    
+    # Rule 2: High ELA score (>12) is an indicator of synthesis or tampering.
     elif ela_score > 12.0:
-        st.error("### Verdict: AI-GENERATED / TAMPERED (Detected via ELA)")
+        st.error(f"### Verdict: AI-GENERATED / MODIFIED (Statistical Detection)")
+        st.write(f"Forensic Score: {ela_score:.2f}")
+    
+    # Rule 3: Visual/Heuristic Check (Manual Mentor Input)
     else:
-        st.success("### Verdict: LIKELY REAL PHOTOGRAPH")
-        st.write(f"Confidence: High (ELA: {ela_score:.2f}, FFT: {fft_score:.2f})")
+        st.success(f"### Verdict: LIKELY REAL PHOTOGRAPH (Pixel Analysis)")
+        st.write(f"Score: {ela_score:.2f}")
+        st.warning("Note: High-end AI can sometimes bypass pixel-level tests. Check metadata tab for more info.")
 
-    st.sidebar.info(f"ELA Score: {ela_score:.2f}\n\nFFT Score: {fft_score:.2f}")
+    with st.expander("🔬 View Raw Forensic Data"):
+        st.write("Average ELA Score:", ela_score)
+        st.write("Metadata Buffer Found:", ai_tags if ai_tags else "None")

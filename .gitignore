@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+env/
+
+# Build outputs
+dist/
+build/
+.output/
+.tanstack/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Downloaded model weights
+ml_models/emotion_model/cache/
+ml_models/ner_model/cache/
+
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/
